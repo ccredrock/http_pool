@@ -13,14 +13,20 @@
 %% callback
 -export([init/3, handle/2, terminate/3]).
 
--export([ba_auth/2, ba_post/6]).
+-export([ba_post/6, ba_auth/2, parse_client/1, auth_sign/2]).
 
 %%------------------------------------------------------------------------------
 -behaviour(cowboy_http_handler).
 
 %%------------------------------------------------------------------------------
+-callback handle_req(DeadNode::binary()) -> ok | {error, Reason::term()}.
+-callback get_secret(DeadNode::binary()) -> ok | {error, Reason::term()}.
+
+%%------------------------------------------------------------------------------
 start([{_Name, Props} | T]) ->
-    Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, [proplists:get_value(callback, Props)]}]}]),
+    Dispatch = cowboy_router:compile([{'_', [{proplists:get_value(path, Props),
+                                              ?MODULE,
+                                              [proplists:get_value(callback, Props)]}]}]),
     cowboy:start_http(?MODULE,
                       proplists:get_value(count, Props),
                       [{port, proplists:get_value(port, Props)}],
@@ -33,27 +39,16 @@ init({_, http}, Req, [Callback]) ->
     {ok, Req, Callback}.
 
 handle(Req, {Mod, Fun} = Callback) ->
-    case Mod:Fun(Req) of
+    case catch Mod:Fun(Req) of
         {ok, Ret} -> cowboy_req:reply(200, [], Ret, Req);
         {error, Ret} -> cowboy_req:reply(400, [], Ret, Req);
-        {error, Code, Ret} -> cowboy_req:reply(Code, [], Ret, Req)
+        {error, Code, Ret} -> cowboy_req:reply(iolist_to_binary(Code), [], Ret, Req);
+        {'EXIT', Reason} -> error_logger:error_msg("http_pool error ~p~n", [{Reason}])
     end,
     {ok, Req, Callback}.
 
 terminate(_, _, _) ->
     ok.
-
-%%------------------------------------------------------------------------------
-%% [{client, secret}]
-ba_auth(Req, SecretList) ->
-    {Date, Req1} = cowboy_req:header(<<"date">>, Req),
-    {Auth, Req2} = cowboy_req:header(<<"authorization">>, Req1),
-    {Path, _Req3} = cowboy_req:path(Req2),
-    {Client, Sign} = parse_auth(Auth),
-    case lists:keyfind(Client, 1, SecretList) of
-        false -> false;
-        {_, Secret} -> Sign =:= get_sign(Secret, Path, Date)
-    end.
 
 %%------------------------------------------------------------------------------
 ba_post(Host, Port, Client, Secret, Path, Payload) ->
@@ -73,16 +68,33 @@ ba_post(Host, Port, Client, Secret, Path, Payload) ->
         gun:flush(Pid)
     end.
 
+get_auth(Client, Secret, Path, Date) ->
+    Sign = get_sign(Secret, Path, Date),
+    iolist_to_binary(["MWS ", Client, ":", Sign]).
+
 get_sign(Secret, Path, Date) ->
     base64:encode(crypto:hmac(sha,
                               iolist_to_binary(Secret),
                               iolist_to_binary(["POST ", Path, "\n", Date]))).
 
-get_auth(Client, Secret, Path, Date) ->
-    Sign = get_sign(Secret, Path, Date),
-    iolist_to_binary(["MWS ", Client, ":", Sign]).
+%%------------------------------------------------------------------------------
+ba_auth(Req, SecretList) ->
+    Client = parse_client(Req),
+    case lists:keyfind(Client, 1, SecretList) of
+        false -> false;
+        {_, Secret} -> auth_sign(Req, Secret)
+    end.
 
-parse_auth(Auth) ->
-    [<<"MWS ", Client/binary>>, Sign] = re:split(Auth, ":"),
-    {Client, Sign}.
+parse_client(Req) ->
+    {Auth, _Req} = cowboy_req:header(<<"authorization">>, Req),
+    [<<"MWS ", Client/binary>>, _Sign] = re:split(Auth, ":"), Client.
+
+auth_sign(Req, Secret) ->
+    {Date, _} = cowboy_req:header(<<"date">>, Req),
+    {Path, _} = cowboy_req:path(Req),
+    get_sign(Secret, Path, Date) =:= parse_sign(Req).
+
+parse_sign(Req) ->
+    {Auth, _Req} = cowboy_req:header(<<"authorization">>, Req),
+    [<<"MWS ", _Client/binary>>, Sign] = re:split(Auth, ":"), Sign.
 

@@ -12,7 +12,7 @@ basic_test_() ->
      {setup, ?Setup, ?Clearnup,
       [{"ba",
         fun() ->
-                X = http_pool:ba_post("127.0.0.1", 8080, "client1", "asdasdffsadf", "/test", <<"null">>),
+                X = http_pool:ba_post("127.0.0.1", 8080, "client1", "asdasdffsadf", "/test/aa", <<"null">>),
                 timer:sleep(1000),
                 io:format(user, "post result ~p ~n", [X])
         end}]
@@ -22,6 +22,6 @@ basic_test_() ->
 handle(Req) ->
     case http_pool:ba_auth(Req, [{<<"client1">>, <<"asdasdffsadf">>}]) of
         true -> {ok, <<>>};
-        false -> {error, 1000, <<>>}
+        false -> {error, "1000", <<>>}
     end.
 
