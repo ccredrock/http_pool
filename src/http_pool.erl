@@ -15,6 +15,8 @@
 
 -export([ba_post/6, ba_auth/2, parse_client/1, auth_sign/2]).
 
+-define(CONTENT_TYPE, {<<"content-type">>, <<"text/plain;charset=utf-8">>}).
+
 %%------------------------------------------------------------------------------
 -behaviour(cowboy_http_handler).
 
@@ -40,9 +42,9 @@ init({_, http}, Req, [Callback]) ->
 
 handle(Req, {Mod, Fun} = Callback) ->
     case catch Mod:Fun(Req) of
-        {ok, Ret} -> cowboy_req:reply(200, [], Ret, Req);
-        {error, Ret} -> cowboy_req:reply(400, [], Ret, Req);
-        {error, Code, Ret} -> cowboy_req:reply(iolist_to_binary(Code), [], Ret, Req);
+        {ok, Ret} -> cowboy_req:reply(200, [?CONTENT_TYPE], Ret, Req);
+        {error, Ret} -> cowboy_req:reply(400, [?CONTENT_TYPE], Ret, Req);
+        {error, Code, Ret} -> cowboy_req:reply(iolist_to_binary(Code), [?CONTENT_TYPE], Ret, Req);
         {'EXIT', Reason} -> error_logger:error_msg("http_pool error ~p~n", [{Reason}])
     end,
     {ok, Req, Callback}.
@@ -57,7 +59,7 @@ ba_post(Host, Port, Client, Secret, Path, Payload) ->
     {ok, Pid} = gun:open(Host, Port),
     try
         Ref = gun:post(Pid, Path,
-                       [{<<"content-type">>, <<"appliaction/json">>},
+                       [{<<"content-type">>, <<"appliaction/json;charset=utf-8">>},
                         {<<"Date">>, list_to_binary(Date)},
                         {<<"Authorization">>, Auth}], Payload),
         {ok, http} = gun:await_up(Pid),
