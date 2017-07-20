@@ -13,7 +13,7 @@
 %% callback
 -export([init/3, handle/2, terminate/3]).
 
--export([ba_post/6, ba_auth/2, parse_client/1, auth_sign/2]).
+-export([ba_post/6, ba_get/6, ba_auth/2, parse_client/1, auth_sign/2]).
 
 -define(CONTENT_TYPE, {<<"content-type">>, <<"text/plain;charset=utf-8">>}).
 
@@ -29,10 +29,10 @@ start([{_Name, Props} | T]) ->
     Dispatch = cowboy_router:compile([{'_', [{proplists:get_value(path, Props),
                                               ?MODULE,
                                               [proplists:get_value(callback, Props)]}]}]),
-    cowboy:start_http(?MODULE,
-                      proplists:get_value(count, Props),
-                      [{port, proplists:get_value(port, Props)}],
-                      [{env, [{dispatch, Dispatch}]}]),
+    {ok, _} = cowboy:start_http(erlang:make_ref(),
+                                proplists:get_value(count, Props),
+                                [{port, proplists:get_value(port, Props)}],
+                                [{env, [{dispatch, Dispatch}]}]),
     start(T);
 start([]) -> ok.
 
@@ -58,12 +58,31 @@ ba_post(Host, Port, Client, Secret, Path, Payload) ->
     Auth = get_auth(Client, Secret, Path, Date),
     {ok, Pid} = gun:open(Host, Port),
     try
+        {ok, http} = gun:await_up(Pid),
         Ref = gun:post(Pid, Path,
                        [{<<"content-type">>, <<"appliaction/json;charset=utf-8">>},
                         {<<"Date">>, list_to_binary(Date)},
                         {<<"Authorization">>, Auth}], Payload),
+        {response, _, 200, _Headers} = gun:await(Pid, Ref),
+        {ok, _Body} = gun:await_body(Pid, Ref)
+    catch E:R -> {false, {E,R, erlang:get_stacktrace()}}
+    after
+        gun:close(Pid),
+        gun:flush(Pid)
+    end.
+
+ba_get(Host, Port, Client, Secret, Path, Vals) ->
+    Date = strftime:f(os:timestamp(), "%a, %d %b %Y %H:%M:%S GMT", universal),
+    Auth = get_auth(Client, Secret, Path, Date),
+    {ok, Pid} = gun:open(Host, Port),
+    try
         {ok, http} = gun:await_up(Pid),
-        {response, _, 200, _Headers} = gun:await(Pid, Ref), ok
+        Ref = gun:get(Pid, Path ++ "?" ++ Vals,
+                      [{<<"content-type">>, <<"appliaction/json;charset=utf-8">>},
+                       {<<"Date">>, list_to_binary(Date)},
+                       {<<"Authorization">>, Auth}]),
+        {response, _, 200, _Headers} = gun:await(Pid, Ref),
+        {ok, _Body} = gun:await_body(Pid, Ref)
     catch E:R -> {false, {E,R, erlang:get_stacktrace()}}
     after
         gun:close(Pid),
