@@ -2,7 +2,8 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--export([handle/1]).
+%% callback
+-export([init/3, handle/2, terminate/3]).
 
 -define(Setup, fun() -> application:start(http_pool) end).
 -define(Clearnup, fun(_) -> application:stop(http_pool) end).
@@ -19,9 +20,20 @@ basic_test_() ->
      }
     }.
 
-handle(Req) ->
+%%------------------------------------------------------------------------------
+init({_, http}, Req, [_, Callback]) ->
+    {ok, Req, Callback}.
+
+handle(Req, State) ->
     case http_pool:ba_auth(Req, [{<<"client1">>, <<"asdasdffsadf">>}]) of
-        true -> {ok, <<>>};
-        false -> {error, "1000", <<>>}
+        true ->
+            http_pool:reply_ok(<<"">>, Req),
+            {ok, Req, State};
+        false ->
+            http_pool:reply_ok(<<"123">>, Req),
+            {ok, Req, State}
     end.
+
+terminate(_, _, _) ->
+    ok.
 
