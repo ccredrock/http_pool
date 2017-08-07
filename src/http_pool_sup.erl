@@ -16,8 +16,7 @@
 
 %%------------------------------------------------------------------------------
 start_link() ->
-    {ok, List} = application:get_env(http_pool, pools, []),
-    http_pool:start(List),
+    http_pool:start(application:get_env(http_pool, pools, [])),
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
