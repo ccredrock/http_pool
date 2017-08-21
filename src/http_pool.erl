@@ -14,8 +14,6 @@
          reply_ok/2,
          ba_auth/2, parse_client/1, auth_sign/2]).
 
--define(CONTENT_TYPE, {<<"content-type">>, <<"text/plain;charset=utf-8">>}).
-
 %%------------------------------------------------------------------------------
 start([{Name, Props} | T]) ->
     Dispatch = cowboy_router:compile([{'_', [{proplists:get_value(path, Props),
@@ -37,7 +35,7 @@ ba_post(Host, Port, Client, Secret, Path, Body) ->
 make_ba_hearders(Client, Secret, Path) ->
     Date = strftime:f(os:timestamp(), "%a, %d %b %Y %H:%M:%S GMT", universal),
     Auth = get_auth(Client, Secret, Path, Date),
-    [{<<"content-type">>, <<"appliaction/json;charset=utf-8">>},
+    [{<<"Content-Type">>, <<"appliaction/json;charset=utf-8">>},
      {<<"Date">>, list_to_binary(Date)},
      {<<"Authorization">>, Auth}].
 
@@ -95,7 +93,7 @@ ba_auth(Req, SecretList) ->
     end.
 
 parse_client(Req) ->
-    {Auth, _Req} = cowboy_req:header(<<"authorization">>, Req),
+    {Auth, _}= cowboy_req:header(<<"authorization">>, Req),
     [<<"MWS ", Client/binary>>, _Sign] = re:split(Auth, ":"), Client.
 
 auth_sign(Req, Secret) ->
@@ -104,6 +102,6 @@ auth_sign(Req, Secret) ->
     get_sign(Secret, Path, Date) =:= parse_sign(Req).
 
 parse_sign(Req) ->
-    {Auth, _Req} = cowboy_req:header(<<"authorization">>, Req),
+    {Auth, _}= cowboy_req:header(<<"authorization">>, Req),
     [<<"MWS ", _Client/binary>>, Sign] = re:split(Auth, ":"), Sign.
 
