@@ -10,7 +10,7 @@
 
 -export([start/1]).
 
--export([ba_post/6, http_post/5, ba_get/6,
+-export([ba_post/6, http_post/5, http_post2/5, ba_get/6,
          reply_ok/2,
          ba_auth/2, parse_client/1, auth_sign/2]).
 
@@ -29,39 +29,57 @@ start([]) -> ok.
 %%------------------------------------------------------------------------------
 -spec ba_post(list(), integer(), list(), list(), list(), binary()) -> {ok, binary()} | {error, any()}.
 ba_post(Host, Port, Client, Secret, Path, Body) ->
-    Hearders = make_ba_hearders(Client, Secret, Path),
-    http_post(Host, Port, Hearders, Path, Body).
+    Headers = make_ba_headers(Client, Secret, Path),
+    http_post(Host, Port, Headers, Path, Body).
 
-make_ba_hearders(Client, Secret, Path) ->
+make_ba_headers(Client, Secret, Path) ->
     Date = strftime:f(os:timestamp(), "%a, %d %b %Y %H:%M:%S GMT", universal),
     Auth = get_auth(Client, Secret, Path, Date),
     [{<<"Content-Type">>, <<"appliaction/json;charset=utf-8">>},
      {<<"Date">>, list_to_binary(Date)},
      {<<"Authorization">>, Auth}].
 
-http_post(Host, Port, Hearders, Path, Body) ->
-    Fun = fun(Pid) -> gun:post(Pid, Path, Hearders, Body) end,
+http_post(Host, Port, Headers, Path, Body) ->
+    Fun = fun(Pid) -> gun:post(Pid, Path, Headers, Body) end,
     case http_exec(Host, Port, Fun) of
         {'EXIT', Reason} -> {error, Reason};
         Result -> Result
     end.
 
+http_post2(Host, Port, Headers, Path, Body) ->
+    Fun = fun(Pid) -> gun:post(Pid, Path, Headers, Body) end,
+    case http_exec(Host, Port, Fun, 2) of
+        {'EXIT', Reason} -> {error, Reason};
+        Result -> Result
+    end.
+
 http_exec(Host, Port, Fun) ->
+    http_exec(Host, Port, Fun, 0).
+
+http_exec(Host, Port, Fun, Version) ->
     {ok, Pid} = gun:open(Host, Port),
+    Info = gun:info(Pid),
     try
         {ok, http} = gun:await_up(Pid),
         Ref = Fun(Pid),
         case gun:await(Pid, Ref) of
-            {response, fin, 200, _Headers} -> {ok, <<>>};
-            {response, nofin, 200, _Headers} -> gun:await_body(Pid, Ref)
+            {response, fin, 200, _Headers} when Version =:= 0 ->
+                {ok, <<>>};
+            {response, nofin, 200, _Headers} when Version =:= 0 ->
+                gun:await_body(Pid, Ref);
+            {response, fin, 200, Headers} ->
+                {Info, Headers, <<>>};
+            {response, nofin, 200, Headers} ->
+                {ok, Body} = gun:await_body(Pid, Ref),
+                {Info, Headers, Body}
         end
     after
         gun:close(Pid),
         gun:flush(Pid)
     end.
 
-http_get(Host, Port, Hearders, Path) ->
-    Fun = fun(Pid) -> gun:get(Pid, Path, Hearders) end,
+http_get(Host, Port, Headers, Path) ->
+    Fun = fun(Pid) -> gun:get(Pid, Path, Headers) end,
     case http_exec(Host, Port, Fun) of
         {'EXIT', Reason} -> {error, Reason};
         Result -> Result
@@ -69,8 +87,8 @@ http_get(Host, Port, Hearders, Path) ->
 
 -spec ba_get(list(), integer(), list(), list(), list(), list()) -> {ok, binary()} | {error, any()}.
 ba_get(Host, Port, Client, Secret, Path, Query) ->
-    Hearders = make_ba_hearders(Client, Secret, Path),
-    http_get(Host, Port, Hearders, Path ++ "?" ++ Query).
+    Headers = make_ba_headers(Client, Secret, Path),
+    http_get(Host, Port, Headers, Path ++ "?" ++ Query).
 
 get_auth(Client, Secret, Path, Date) ->
     Sign = get_sign(Secret, Path, Date),
