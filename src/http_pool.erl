@@ -35,7 +35,7 @@ ba_post(Host, Port, Client, Secret, Path, Body) ->
 make_ba_headers(Client, Secret, Path) ->
     Date = strftime:f(os:timestamp(), "%a, %d %b %Y %H:%M:%S GMT", universal),
     Auth = get_auth(Client, Secret, Path, Date),
-    [{<<"Content-Type">>, <<"appliaction/json;charset=utf-8">>},
+    [{<<"Content-Type">>, <<"application/json;charset=utf-8">>},
      {<<"Date">>, list_to_binary(Date)},
      {<<"Authorization">>, Auth}].
 
@@ -57,7 +57,7 @@ http_exec(Host, Port, Fun) ->
     http_exec(Host, Port, Fun, 0).
 
 http_exec(Host, Port, Fun, Version) ->
-    {ok, Pid} = gun:open(Host, Port),
+    {ok, Pid} = gun:open(Host, Port, #{transport_opts => [{reuseaddr, true}]}),
     Info = gun:info(Pid),
     try
         {ok, http} = gun:await_up(Pid),
